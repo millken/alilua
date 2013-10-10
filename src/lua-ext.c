@@ -457,6 +457,8 @@ int lua_f_upgrade_to_websocket ( lua_State *L )
     epd->websocket->L = NULL;
     epd->websocket->data = NULL;
 
+    epd->status = STEP_WAIT;
+
     lua_pushvalue ( L, 2 );
     epd->websocket->websocket_handles = luaL_ref ( L, LUA_REGISTRYINDEX );
     //printf ( "websocket_handles %d\n", epd->websocket->websocket_handles );

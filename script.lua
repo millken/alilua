@@ -401,6 +401,14 @@ function initbox()
 					"Connection: Upgrade",
 					"Sec-WebSocket-Accept: "..base64_encode(sha1bin(headers['sec-websocket-key']..'258EAFA5-E914-47DA-95CA-C5AB0DC85B11'))
 					})
+			
+			local _on = on
+			on = function(data)
+				newthread(function()
+					if type(_on) == 'function' then _on(data) end
+				end)
+			end
+			
 			upgrade_to_websocket(__epd__, __box__)
 			if loop then
 				loop = newthread(loop)

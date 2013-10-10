@@ -1317,11 +1317,9 @@ _cocreate = coroutine.create \
 allthreads = {} \
 function clearthreads() \
 	local v \
-	local c = 0 \
 	for v in pairs(allthreads) do \
 		if coroutine.status(v) ~= 'suspended' then \
 			allthreads[v] = nil \
-		else c=c+1 \
 		end \
 	end \
 	collectgarbage() \

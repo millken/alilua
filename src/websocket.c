@@ -73,7 +73,8 @@ int ws_send_data ( epdata_t *epd,
         epd->websocket->data_len = payload_len;
         //printf ( "bewrite %d\n", epd->websocket->data_len );
         epd->websocket->sended = 0; // for sended count
-
+        epd->status = STEP_SEND;
+        serv_status.sending_counts++;
         se_be_write ( epd->se_ptr, websocket_be_write );
 
         return 1;
@@ -127,7 +128,6 @@ int websocket_be_read ( se_ptr_t *ptr )
 
         } else {
             close_client ( epd );
-            serv_status.reading_counts--;
             return 0;
         }
 
@@ -152,7 +152,6 @@ int websocket_be_read ( se_ptr_t *ptr )
                 //network_send_error ( epd, 503, "buf error!" );
                 close_client ( epd );
                 epd = NULL;
-                serv_status.reading_counts--;
                 break;
             }
 
@@ -202,7 +201,6 @@ int websocket_be_read ( se_ptr_t *ptr )
                 ws_send_data ( epd, 1, 0, 0, 0, WS_OPCODE_CLOSE, 0, NULL );
                 close_client ( epd );
                 epd = NULL;
-                serv_status.reading_counts--;
                 return 0;
             }
         }
@@ -226,6 +224,9 @@ int websocket_be_read ( se_ptr_t *ptr )
                 } else {
                     epd->contents = epd->headers + epd->websocket->masking_key_offset;
                 }
+
+                epd->status = STEP_WAIT;
+                serv_status.reading_counts--;
 
                 //printf ( "%ld readed %ld\n", epd->content_length, epd->data_len );
                 epd->data_len = 0;
@@ -300,6 +301,8 @@ int websocket_be_write ( se_ptr_t *ptr )
     }
 
     if ( epd->websocket->sended >= epd->websocket->data_len ) {
+        serv_status.sending_counts--;
+        epd->status = STEP_WAIT;
         epd->websocket->data = NULL;
         epd->websocket->data_len = -1;
         //printf ( "send finish %d\n", epd->websocket->data_len );
