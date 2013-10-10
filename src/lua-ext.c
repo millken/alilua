@@ -496,8 +496,9 @@ int lua_f_websocket_send ( lua_State *L )
     size_t len;
     const char *data = lua_tolstring ( L, 2, &len );
     epd->websocket->L = L;
-    int r = ws_send_data ( epd, 1, 0, 0, 0, lua_isboolean ( L,
-                           3 ) ? WS_OPCODE_BINARY : WS_OPCODE_TEXT, len, data );
+    int r = ws_send_data ( epd, 1, 0, 0, 0, (lua_isboolean ( L,
+                           3 ) && lua_toboolean ( L,
+                           3 )) ? WS_OPCODE_BINARY : WS_OPCODE_TEXT, len, data );
 
     if ( r == -1 ) {
         lua_pushnil ( L );
