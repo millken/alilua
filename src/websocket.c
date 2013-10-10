@@ -2,6 +2,18 @@
 #include <lua.h>
 
 static unsigned char buf_256[256];
+static uint64_t ntohll ( uint64_t n )
+{
+#if BYTE_ORDER == LITTLE_ENDIAN
+    n = ( ( n << 8 ) & 0xFF00FF00FF00FF00ULL ) |
+        ( ( n >> 8 ) & 0x00FF00FF00FF00FFULL );
+    n = ( ( n << 16 ) & 0xFFFF0000FFFF0000ULL ) |
+        ( ( n >> 16 ) & 0x0000FFFF0000FFFFULL );
+    n = ( n << 32 ) | ( n >> 32 );
+#endif
+    return n;
+}
+
 int ws_send_data ( epdata_t *epd,
                    unsigned int fin,
                    unsigned int rsv1,
@@ -44,8 +56,9 @@ int ws_send_data ( epdata_t *epd,
         offset = 4;
 
     } else {
-        buf_256[1] |= ( ( frame_mask << 7 ) | 127 );
-        memcpy ( buf_256 + 2, &payload_len, 8 );
+        void *p = &buf_256[2];
+        buf_256[1] = 127;
+        * ( uint64_t * ) p = ntohll ( ( uint64_t ) payload_len );
         offset = 10;
     }
 
@@ -207,6 +220,7 @@ int websocket_be_read ( se_ptr_t *ptr )
 
         if ( epd->content_length > -1 ) {
             if ( epd->data_len >= epd->content_length ) {
+                uint frame_opcode = epd->headers[0] & 0x0f;
                 uint64_t payload_length = epd->content_length - epd->websocket->masking_key_offset;
                 epd->content_length = -1;
 
@@ -242,8 +256,9 @@ int websocket_be_read ( se_ptr_t *ptr )
 
                 if ( lua_isfunction ( L, -1 ) ) {
                     lua_pushlstring ( L, epd->contents, payload_length );
+                    lua_pushboolean ( L, frame_opcode == WS_OPCODE_BINARY );
 
-                    if ( lua_pcall ( L, 1, 0, 0 ) ) {
+                    if ( lua_pcall ( L, 2, 0, 0 ) ) {
                         if ( lua_isstring ( L, -1 ) ) {
                             errorlog ( epd, lua_tostring ( L, -1 ) );
                             lua_pop ( L, 1 );

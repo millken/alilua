@@ -220,8 +220,7 @@ function readfile(f)
 	return r,e
 end
 
-
-local env = {null=null,errorlog=errorlog,error=error,io=io,_print=print, sha1bin=sha1bin,is_websocket=is_websocket,upgrade_to_websocket=upgrade_to_websocket,_websocket_send=websocket_send, math=math, string=string,tostring=tostring,tonumber=tonumber, sleep=sleep,pairs=pairs,ipairs=ipairs,type=type,debug=debug,date=date,pcall=pcall,call=call,table=table,unpack=unpack,
+local env = {ddata=ddata,null=null,errorlog=errorlog,error=error,io=io,_print=print, sha1bin=sha1bin,is_websocket=is_websocket,upgrade_to_websocket=upgrade_to_websocket,_websocket_send=websocket_send, math=math, string=string,tostring=tostring,tonumber=tonumber, sleep=sleep,pairs=pairs,ipairs=ipairs,type=type,debug=debug,date=date,pcall=pcall,call=call,table=table,unpack=unpack,
 			httpclient=httpclient,_jsonrpc_handle=jsonrpc_handle,
 			cache_set=cache_set,cache_get=cache_get,cache_del=cache_del,random_string=random_string,
 			cosocket=cosocket,allthreads=allthreads,newthread=newthread,coroutine_wait=coroutine_wait,swop=swop,time=time,longtime=longtime,mysql=mysql,json_encode=json_encode,json_decode=json_decode,memcached=memcached,redis=redis,coroutine=coroutine,
@@ -403,9 +402,9 @@ function initbox()
 					})
 			
 			local _on = on
-			on = function(data)
+			on = function(data, typ)
 				newthread(function()
-					if type(_on) == 'function' then _on(data) end
+					if type(_on) == 'function' then _on(data, typ) end
 				end)
 			end
 			
@@ -418,11 +417,11 @@ function initbox()
 		end
 	end
 	
-	function websocket_send(data)
+	function websocket_send(data, typ)
 		if #data > 200 then
-		newthread(function() _websocket_send(__epd__, data) end)
+		newthread(function() _websocket_send(__epd__, data, typ) end)
 		else
-		_websocket_send(__epd__, data)
+		_websocket_send(__epd__, data, typ)
 		end
 	end
 end
