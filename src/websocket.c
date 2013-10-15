@@ -241,7 +241,7 @@ int websocket_be_read ( se_ptr_t *ptr )
 
                 if ( lua_isfunction ( L, -1 ) ) {
                     lua_pushlstring ( L, epd->contents, payload_length );
-                    lua_pushboolean ( L, frame_opcode == WS_OPCODE_BINARY );
+                    lua_pushnumber ( L, frame_opcode );
                     lua_pushboolean ( L, !! ( ( epd->headers[0] ) & ( 1 << ( 7 ) ) ) );
 
                     if ( lua_pcall ( L, 3, 0, 0 ) ) {

@@ -1,7 +1,7 @@
 #ifndef _CONFIG_H
 #define _CONFIG_H
 
-#define version "v0.30"
+#define version "v0.31"
 #define default_port 19827
 
 #define USE_KEEPALIVE 1
