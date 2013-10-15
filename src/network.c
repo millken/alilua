@@ -772,8 +772,8 @@ static int network_be_write ( se_ptr_t *ptr )
                     send_iov[send_iov_count + 1].iov_base = NULL;
 
                     if ( be_len < 1 ) {
-                        printf ( "%d writev error! %d %ld\n", epd->fd, send_iov_count, be_len );
-                        exit ( 1 );
+                        //printf ( "%d writev error! %d %ld\n", epd->fd, send_iov_count, be_len );
+                        //exit ( 1 );
                     }
 
                     n = writev ( epd->fd, send_iov, send_iov_count );

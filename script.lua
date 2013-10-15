@@ -223,7 +223,7 @@ end
 local env = {null=null,errorlog=errorlog,error=error,io=io,_print=print, sha1bin=sha1bin,is_websocket=is_websocket,upgrade_to_websocket=upgrade_to_websocket,_websocket_send=websocket_send, math=math, string=string,tostring=tostring,tonumber=tonumber, sleep=sleep,pairs=pairs,ipairs=ipairs,type=type,debug=debug,date=date,pcall=pcall,call=call,table=table,unpack=unpack,
 			httpclient=httpclient,_jsonrpc_handle=jsonrpc_handle,
 			cache_set=cache_set,cache_get=cache_get,cache_del=cache_del,random_string=random_string,
-			cosocket=cosocket,allthreads=allthreads,newthread=newthread,coroutine_wait=coroutine_wait,swop=swop,time=time,longtime=longtime,mysql=mysql,json_encode=json_encode,json_decode=json_decode,memcached=memcached,redis=redis,coroutine=coroutine,
+			cosocket=cosocket,allthreads=allthreads,newthread=newthread,wait=wait,coroutine_wait=coroutine_wait,swop=swop,time=time,longtime=longtime,mysql=mysql,json_encode=json_encode,json_decode=json_decode,memcached=memcached,redis=redis,coroutine=coroutine,
 			is_dir=libfs.is_dir,is_file=libfs.is_file,mkdir=libfs.mkdir,rmdir=libfs.rmdir,readdir=libfs.readdir,stat=libfs.stat,unlink=libfs.unlink,_file_exists=file_exists,crypto=crypto,iconv=iconv,iconv_strlen=iconv_strlen,iconv_substr=iconv_substr,
 			trim=trim,strip=strip,explode=explode,implode=implode,escape=escape,escape_uri=escape_uri,unescape_uri=unescape_uri,
 			nl2br=_G['string-utils'].nl2br,
@@ -322,6 +322,7 @@ function initbox()
 	
 	function loadfile(f)
 		if not f:startsWith(__root) then f = __root .. f end
+		f = f:gsub('//','/')
 		local f1,e = CodeCache[f]
 		if not f1 then
 			f1,e = _readfile(f)
@@ -351,6 +352,7 @@ function initbox()
 	
 	function loadtemplate(f)
 		if not f:startsWith(__root) then f = __root .. f end
+		f = f:gsub('//','/')
 		return _loadtemplate(f)
 	end
 	
@@ -417,12 +419,8 @@ function initbox()
 		end
 	end
 	
-	function websocket_send(data, typ)
-		if #data > 200 then
-		newthread(function() _websocket_send(__epd__, data, typ) end)
-		else
-		_websocket_send(__epd__, data, typ)
-		end
+	function websocket_send(data, typ, fin)
+		return _websocket_send(__epd__, data, typ, fin)
 	end
 end
 
@@ -483,5 +481,5 @@ function main(__epd, headers, _GET, _COOKIE, _POST)
 	end
 	f()
 	setfenv(process, box)
-	process(headers, _GET, _COOKIE, _POST)
+	newthread(process, headers, _GET, _COOKIE, _POST)
 end

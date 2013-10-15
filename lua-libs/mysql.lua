@@ -1,8 +1,9 @@
+-- Copyright (C) 2012 Yichun Zhang (agentzh)
+
+
 local bit = require "bit"
 local sub = string.sub
-local tcp = cosocket.tcp
-local insert = table.insert
-local strlen = string.len
+local tcp --= ngx.socket.tcp
 local strbyte = string.byte
 local strchar = string.char
 local strfind = string.find
@@ -14,20 +15,52 @@ local bor = bit.bor
 local lshift = bit.lshift
 local rshift = bit.rshift
 local tohex = bit.tohex
-local sha1 = sha1bin
+local sha1 --= ngx.sha1_bin
 local concat = table.concat
 local unpack = unpack
 local setmetatable = setmetatable
 local error = error
+local tonumber = tonumber
+local print = print
+
+-- add by oneoo
+local ngx = ngx
+local sha1bin = sha1bin
 local type = type
+local pairs = pairs
 local ipairs = ipairs
 local tonumber = tonumber
 local tostring = tostring
-local print = print
+local _mysql_quote = escape
+if not _mysql_quote and ngx then
+    _mysql_quote = function(_)
+        _ = string.gsub(_, "\\", "\\\\")
+        _ = string.gsub(_, "\"", "\\\"")
+        _ = string.gsub(_, "\n", "\\n")
+        _ = string.gsub(_, "\r", "\\r")
+        _ = string.gsub(_, "\t", "\\t")
+        return _
+    end
+end
+if not _mysql_quote then _mysql_quote = function(s) return s end end
+function quote_sql_var(s)
+    if type(s) == 'string' then
+        return _mysql_quote(s)
+    end
+    return s
+end
+if ngx then
+    tcp = ngx.socket.tcp
+    null = ngx.null
+    sha1 = ngx.sha1_bin
+else
+    tcp = cosocket.tcp
+    sha1 = sha1bin
+    if not null then null = false end
+end
+-- end
 
-module(...)
-
-_VERSION = '0.13'
+local _M = { _VERSION = '0.13' }
 
 
 -- constants
@@ -57,6 +90,7 @@ end
 converters[0x09] = tonumber  -- int24
 converters[0x0d] = tonumber  -- year
 converters[0xf6] = tonumber  -- newdecimal
+
 
 local function _get_byte2(data, i)
     local a, b = strbyte(data, i, i + 1)
@@ -95,14 +129,17 @@ end
 
 
 local function _set_byte3(n)
-    return strchar(band(n, 0xff), band(rshift(n, 8), 0xff),
-        band(rshift(n, 16), 0xff))
+    return strchar(band(n, 0xff),
+                   band(rshift(n, 8), 0xff),
+                   band(rshift(n, 16), 0xff))
 end
 
 
 local function _set_byte4(n)
-    return strchar(band(n, 0xff), band(rshift(n, 8), 0xff),
-        band(rshift(n, 16), 0xff), band(rshift(n, 24), 0xff))
+    return strchar(band(n, 0xff),
+                   band(rshift(n, 8), 0xff),
+                   band(rshift(n, 16), 0xff),
+                   band(rshift(n, 24), 0xff))
 end
 
 
@@ -117,19 +154,20 @@ end
 
 
 local function _to_cstring(data)
-    return {data, "\0"}
+    return data .. "\0"
 end
 
 
 local function _to_binary_coded_string(data)
-    return {strchar(strlen(data)), data}
+    return strchar(#data) .. data
 end
 
 
 local function _dump(data)
     local bytes = {}
-    for i = 1, #data do
-        insert(bytes, strbyte(data, i, i))
+    local len = #data
+    for i = 1, len do
+        bytes[i] = strbyte(data, i)
     end
     return concat(bytes, " ")
 end
@@ -137,8 +175,9 @@ end
 
 local function _dumphex(data)
     local bytes = {}
-    for i = 1, #data do
-        insert(bytes, tohex(strbyte(data, i), 2))
+    local len = #data
+    for i = 1, len do
+        bytes[i] = tohex(strbyte(data, i), 2)
     end
     return concat(bytes, " ")
 end
@@ -153,38 +192,27 @@ local function _compute_token(password, scramble)
     local stage2 = sha1(stage1)
     local stage3 = sha1(scramble .. stage2)
     local bytes = {}
-    for i = 1, #stage1 do
-         insert(bytes,
-             bxor(strbyte(stage3, i), strbyte(stage1, i)))
+    local n = #stage1
+    for i = 1, n do
+         bytes[i] = strchar(bxor(strbyte(stage3, i), strbyte(stage1, i)))
     end
 
-    return strchar(unpack(bytes))
+    return concat(bytes)
 end
 
 
-function _send_packet(self, req, size)
+local function _send_packet(self, req, size)
     local sock = self.sock
 
     self.packet_no = self.packet_no + 1
 
     --print("packet no: ", self.packet_no)
 
-    local packet = {
-        _set_byte3(size),
-        strchar(self.packet_no),
-        req
-    }
+    local packet = _set_byte3(size) .. strchar(self.packet_no) .. req
 
-    --print("sending packet...",size, req)
-	--print(packet)
-	local r = sock:send(packet) -- oneoo modif
-	if r == nil and self.opts then
-		local o = connect(self, self.opts)
-		if o then
-			r = sock:send(packet)
-		end
-	end
-    return r
+    --print("sending packet...")
+
+    return sock:send(packet)
 end
 
 
@@ -402,7 +430,8 @@ end
 local function _parse_row_data_packet(data, cols, compact)
     local row = {}
     local pos = 1
-    for i = 1, #cols do
+    local ncols = #cols
+    for i = 1, ncols do
         local value
         value, pos = _from_length_coded_str(data, pos)
         local col = cols[i]
@@ -416,11 +445,11 @@ local function _parse_row_data_packet(data, cols, compact)
             if conv then
                 value = conv(value)
             end
-            -- insert(row, value)
         end
 
         if compact then
-            insert(row, value)
+            row[i] = value
+
         else
             row[name] = value
         end
@@ -451,7 +480,7 @@ local function _recv_field_packet(self)
 end
 
 
-function new(self)
+function _M.new(self)
     local sock, err = tcp()
     if not sock then
         return nil, err
@@ -460,7 +489,7 @@ function new(self)
 end
 
 
-function set_timeout(self, timeout)
+function _M.set_timeout(self, timeout)
     local sock = self.sock
     if not sock then
         return nil, "not initialized"
@@ -470,8 +499,7 @@ function set_timeout(self, timeout)
 end
 
 
-function connect(self, opts)
-    self.opts = opts -- oneoo add
+function _M.connect(self, opts)
     local sock = self.sock
     if not sock then
         return nil, "not initialized"
@@ -496,10 +524,13 @@ function connect(self, opts)
     if host then
         local port = opts.port or 3306
         if not pool then
-            pool = concat({user, database, host, port}, ":")
+            pool = user .. ":" .. database .. ":" .. host .. ":" .. port
         end
-        ok, err = sock:connect(host, port, opts.pool_size, user..'@'..host..':'..port..'/'..database)
-        --ok, err = sock:connect(host, port, { pool = pool })
+        if ngx then
+            ok, err = sock:connect(host, port, { pool = pool })
+        else
+            ok, err = sock:connect(host, port, opts.pool_size, user..'@'..host..':'..port..'/'..database)
+        end
 
     else
         local path = opts.path
@@ -508,10 +539,14 @@ function connect(self, opts)
         end
 
         if not pool then
-            pool = concat({user, database, path}, ":")
+            pool = user .. ":" .. database .. ":" .. path
         end
 
-        ok, err = sock:connect(path, opts.pool_size, user..'@'..path..'/'..database)
+        if ngx then
+            ok, err = sock:connect("unix:" .. path, { pool = pool })
+        else
+            ok, err = sock:connect(path, opts.pool_size, user..'@'..path..'/'..database)
+        end
     end
 
     if not ok then
@@ -605,25 +640,23 @@ function connect(self, opts)
 
     --print("token: ", _dump(token))
 
-    local req = {
-        _set_byte4(client_flags),
-        _set_byte4(self._max_packet_size),
-        "\0", -- TODO: add support for charset encoding
-        strrep("\0", 23),
-        _to_cstring(user),
-        _to_binary_coded_string(token),
-        _to_cstring(database)
-    }
+    local req = _set_byte4(client_flags)
+                .. _set_byte4(self._max_packet_size)
+                .. "\0" -- TODO: add support for charset encoding
+                .. strrep("\0", 23)
+                .. _to_cstring(user)
+                .. _to_binary_coded_string(token)
+                .. _to_cstring(database)
 
-    local packet_len = 4 + 4 + 1 + 23 + strlen(user) + 1
-        + strlen(token) + 1 + strlen(database) + 1
+    local packet_len = 4 + 4 + 1 + 23 + #user + 1
+        + #token + 1 + #database + 1
 
-     --print("packet content length: ", packet_len)
-     --print("packet content: ", _dump(concat(req, "")))
+    -- print("packet content length: ", packet_len)
+    -- print("packet content: ", _dump(concat(req, "")))
 
     local bytes, err = _send_packet(self, req, packet_len)
     if not bytes then
-        return nil, "failed to send client authentication packet: " .. (err and err or 'unknow')
+        return nil, "failed to send client authentication packet: " .. err
     end
 
     --print("packet sent ", bytes, " bytes")
@@ -652,23 +685,24 @@ function connect(self, opts)
 end
 
 
-function setkeepalive(self, ...)
+function _M.set_keepalive(self, ...)
     local sock = self.sock
     if not sock then
         return nil, "not initialized"
     end
 
-    --[[if self.state ~= STATE_CONNECTED then
+    if self.state ~= STATE_CONNECTED then
         return nil, "cannot be reused in the current connection state: "
                     .. (self.state or "nil")
     end
 
-    self.state = nil]]
+    self.state = nil
+    if not ngx then return true end
     return sock:setkeepalive(...)
 end
 
 
-function get_reused_times(self)
+function _M.get_reused_times(self)
     local sock = self.sock
     if not sock then
         return nil, "not initialized"
@@ -678,7 +712,7 @@ function get_reused_times(self)
 end
 
 
-function close(self)
+function _M.close(self)
     local sock = self.sock
     if not sock then
         return nil, "not initialized"
@@ -690,7 +724,7 @@ function close(self)
 end
 
 
-function server_ver(self)
+function _M.server_ver(self)
     return self._server_ver
 end
 
@@ -700,6 +734,8 @@ local function send_query(self, query)
         return nil, "cannot send query in the current context: "
                     .. (self.state or "nil")
     end
+    
+    --print(query)
 
     local sock = self.sock
     if not sock then
@@ -708,8 +744,8 @@ local function send_query(self, query)
 
     self.packet_no = -1
 
-    local cmd_packet = {strchar(COM_QUERY), query}
-    local packet_len = 1 + strlen(query)
+    local cmd_packet = strchar(COM_QUERY) .. query
+    local packet_len = 1 + #query
 
     local bytes, err = _send_packet(self, cmd_packet, packet_len)
     if not bytes then
@@ -718,10 +754,15 @@ local function send_query(self, query)
 
     self.state = STATE_COMMAND_SENT
 
+    -- add by oneoo
+    self.command = query:sub(1,query:find(' ')-1):upper()
+    -- end
+    
     --print("packet sent ", bytes, " bytes")
 
     return bytes
 end
+_M.send_query = send_query
 
 
 local function read_result(self)
@@ -752,6 +793,15 @@ local function read_result(self)
             return res, "again"
         end
 
+        -- add by oneoo
+        if self.command == 'INSERT' or self.command == 'DELETE' or self.command == 'UPDATE' then
+            if res.affected_rows < 1 then
+                self.state = STATE_CONNECTED
+                return false, 'no affected'
+            end
+        end
+        -- end
+
         self.state = STATE_CONNECTED
         return res
     end
@@ -777,7 +827,7 @@ local function read_result(self)
             return nil, err, errno, sqlstate
         end
 
-        insert(cols, col)
+        cols[i] = col
     end
 
     local packet, typ, err = _recv_packet(self)
@@ -795,6 +845,7 @@ local function read_result(self)
     local compact = self.compact
 
     local rows = {}
+    local i = 0
     while true do
         --print("reading a row")
 
@@ -822,17 +873,236 @@ local function read_result(self)
         -- typ == 'DATA'
 
         local row = _parse_row_data_packet(packet, cols, compact)
-        insert(rows, row)
+        i = i + 1
+        rows[i] = row
     end
 
     self.state = STATE_CONNECTED
 
     return rows
 end
+_M.read_result = read_result
 
+-- add by oneoo
+local function parse_sql(...)
+    local args = {...}
+    local sql = args[1]
+    if not sql or type(sql) ~= 'string' then
+        return nil, 'no SQL'
+    end
 
-function query(self, query)
-    local bytes, err = send_query(self, query)
+    if #args > 1 then
+        local is_normal_mode = true
+        --('SELECT * FROM table WHERE id=? AND name=? LIMIT 1', 1, 'one')
+        local k,v
+        for k,v in pairs(args) do
+            if type(v) == 'table' then
+                is_normal_mode = false
+                break
+            end
+        end
+        
+        if not is_normal_mode and 
+            type(args[2]) == 'table' and 
+            #args[2] > 0 and 
+            type(args[2][1]) ~= 'table' then
+            --('SELECT * FROM table WHERE id=? AND name=? LIMIT 1', {1, 'one'})
+            args = {args[1], unpack(args[2])}
+            is_normal_mode = true
+        end
+        
+        if is_normal_mode then
+            local i = 2
+            local _pos = 1
+            local w = sql:upper():find(' WHERE ')
+            local iw = 20000
+            if w then
+                iw = 1
+                local _sql = sql:sub(1, w)
+                local p = _sql:find('?')
+                while p do
+                    iw = iw + 1
+                    p = _sql:find('?', p+1)
+                end
+            end
+            local p = sql:find('?', _pos)
+            while p do
+                if i>#args or args[i] == nil then
+                    return nil, 'miss data to parse marker'
+                end
+                v = args[i]
+                if v == null then
+                    v = ((w and i>iw) and 'IS ' or '')..'NULL'
+                end
+                sql = concat({
+                                    sql:sub(1, p-1),
+                                    (type(args[i])=='string' and '"' or ''),
+                                    _mysql_quote(v),
+                                    (type(args[i])=='string' and '"' or ''),
+                                    sql:sub(p+1)
+                                    })
+                i = i+1
+                _pos = p+#tostring(args[i])
+                p = sql:find('?', _pos)
+            end
+            
+            return sql
+        end
+        
+        local i = sql:find(' ')
+        if not i then
+            return nil, 'error SQL format'
+        end
+        local starts = sql:sub(1, i-1):upper()
+        i = sql:find('?')
+        if not i then
+            return nil, 'miss ? marker in the SQL'
+        end
+        
+        local t2 = type(args[2])
+        
+        if t2 == 'string' then
+            sql = sql:sub(1, i-1).. '"'.. args[2] .. '"' .. sql:sub(i+1)
+        elseif t2 == 'number' then
+            sql = sql:sub(1, i-1).. args[2] .. sql:sub(i+1)
+        elseif t2 == 'table' then
+            local sql_p = ''
+            local sep = ' AND '
+            if starts == 'UPDATE' or starts == 'INSERT' then
+                sql_p = ''
+                sep = ', '
+            end
+            if #args[2] < 1 then
+                for k,v in pairs(args[2]) do
+                    if type(k) == 'string' then
+                        if v == null then
+                            sql_p = concat({
+                                                sql_p,
+                                                '`', k, '`',
+                                                ((starts=='INSERT' or starts=='UPDATE') and '=' or ' IS '),
+                                                'NULL', sep
+                                                })
+                        else
+                            local q = (type(v) == 'string' and '"' or '')
+                            sql_p = concat({
+                                                sql_p,
+                                                '`', k, '`=',
+                                                q, _mysql_quote(v), q,
+                                                sep
+                                                })
+                        end
+                    end
+                end
+                sql_p = sql_p:sub(1,#sql_p-#sep)
+            else
+                if starts == 'INSERT' and type(args[2][1]) == 'table' and #args[2][1] < 1 then
+                sql_p = sql_p .. '('
+                for k,v in pairs(args[2][1]) do
+                    if type(k) == 'string' then
+                        sql_p = sql_p ..'`' .. k .. '`' .. sep
+                    end
+                end
+                sql_p = sql_p:sub(1,#sql_p-#sep)
+                sql_p = sql_p .. ')'
+                sql_p = sql_p .. ' VALUES '
+                local k
+                for k=1,#args[2] do
+                    sql_p = sql_p .. '('
+                    for k,v in pairs(args[2][k]) do
+                        if type(k) == 'string' then
+                            if v == null then
+                                sql_p = sql_p .. 'NULL' .. sep
+                            else
+                                local q = (type(v) == 'string' and '"' or '')
+                                sql_p = concat({
+                                                    sql_p,
+                                                    q, _mysql_quote(v), q,
+                                                    sep
+                                                    })
+                            end
+                        end
+                    end
+                    sql_p = sql_p:sub(1,#sql_p-#sep)
+                    sql_p = sql_p .. ')'.. sep
+                end
+                sql_p = sql_p:sub(1,#sql_p-#sep)
+                end
+            end
+            
+            sql = sql:sub(1, i-1) .. sql_p .. sql:sub(i+1)
+            local oi = i
+            i = sql:find('?', i+#sql_p)
+            if i then
+                if #args < 3 or type(args[3]) ~= 'table' or #args[3] > 0 then
+                    return nil, 'miss data to parse marker near:'
+                                .. sql:sub(1, oi-1)..'?'..sql:sub(#sql_p+oi,i-1)..'<?>'
+                end
+                
+                sql_p = ''
+                local sep = ' AND '
+                for k,v in pairs(args[3]) do
+                    if type(k) == 'string' then
+                        if v == null then
+                            sql_p = sql_p .. '`' .. k .. '` IS NULL' .. sep
+                        else
+                            local q = (type(v) == 'string' and '"' or '')
+                            sql_p = concat({
+                                                sql_p,
+                                                '`', k, '`=',
+                                                q, _mysql_quote(v), q,
+                                                sep
+                                                })
+                        end
+                    end
+                end
+                sql_p = sql_p:sub(1,#sql_p-#sep)
+                
+                sql = sql:sub(1, i-1) .. sql_p .. sql:sub(i+1)
+            end
+        end
+    end
+
+    return sql
+end
+
+function _M.get_row(self, query)
+    local sql = parse_sql(query)
+    local _sql = sql:upper()
+    
+    if not _sql:find(' LIMIT ') then
+        local i = sql:find(';')
+        if not i then i = #sql else i = i-1 end
+        sql = sql:sub(1,i)..' LIMIT 1'..sql:sub(i+1)
+    end
+    
+    local bytes, err = send_query(self, sql)
+    if not bytes then
+        return nil, "failed to send query: " .. err
+    end
+
+    local r, err = read_result(self)
+    if r and #r < 1 then r = nil end
+    return r, err
+end
+
+function _M.get_results(self, query)
+    local sql = parse_sql(query)
+    local _sql = sql:upper()
+    
+    local bytes, err = send_query(self, sql)
+    if not bytes then
+        return nil, "failed to send query: " .. err
+    end
+
+    local r, err = read_result(self)
+    if r and #r < 1 then r = nil end
+    return r, err
+end
+-- end
+
+function _M.query(self, query, ...)
+    local args = {query, ...}
+    local bytes, err = send_query(self, parse_sql(unpack(args)))
     if not bytes then
         return nil, "failed to send query: " .. err
     end
@@ -841,7 +1111,7 @@ function query(self, query)
 end
 
 
-function set_compact_arrays(self, value)
+function _M.set_compact_arrays(self, value)
     self.compact = value
 end
 
@@ -850,11 +1120,4 @@ _M.send_query = send_query
 _M.read_result = read_result
 
 
-local class_mt = {
-    -- to prevent use of casual module global variables
-    __newindex = function (table, key, val)
-        error('attempt to write to undeclared variable "' .. key .. '"')
-    end
-}
-
-setmetatable(_M, class_mt)
+return _M

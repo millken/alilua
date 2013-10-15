@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
 #include <pthread.h>
 #include <sys/timeb.h>
@@ -47,6 +48,10 @@
 #define cc_printf(fmt, ...) printf("%s" fmt "%s", A_C_C, ##__VA_ARGS__, A_C__)
 
 time_t timer;
+
+#ifndef u_char
+#define u_char unsigned char
+#endif
 
 typedef struct {
     lua_State *L;
@@ -134,6 +139,7 @@ int del_in_timeout_link ( cosocket_t *cok );
 int lua_f_coroutine_resume_waiting ( lua_State *L );
 int chk_do_timeout_link ( int loop_fd );
 
+int get_dns_cache ( const char *name, struct in_addr *addr );
 void add_dns_cache ( const char *name, struct in_addr addr, int do_recache );
 int do_dns_query ( int loop_fd, cosocket_t *cok, const char *name );
 
@@ -141,6 +147,8 @@ int do_dns_query ( int loop_fd, cosocket_t *cok, const char *name );
 long longtime();
 
 int tcp_connect ( const char *host, int port, cosocket_t *cok, int loop_fd, int *ret );
+int add_connection_to_pool ( int loop_fd, unsigned long pool_key, int pool_size,
+                             se_ptr_t *ptr, void *ssl, void *ctx );
 
 int lua_f_time ( lua_State *L );
 int lua_f_longtime ( lua_State *L );
@@ -156,6 +164,6 @@ int cosocket_lua_f_escape ( lua_State *L );
 int lua_f_escape_uri ( lua_State *L );
 int lua_f_unescape_uri ( lua_State *L );
 
-uint32_t fnv1a_32 ( const char *data, uint32_t len );
-uint32_t fnv1a_64 ( const char *data, uint32_t len );
+uint32_t fnv1a_32 ( const unsigned char *data, uint32_t len );
+uint32_t fnv1a_64 ( const unsigned char *data, uint32_t len );
 #endif

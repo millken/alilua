@@ -94,21 +94,6 @@ int ws_send_data ( epdata_t *epd,
     }
 }
 
-/*
- * @METHOD_NAME: write
- * @METHOD_DESC: It writes a message frame to a specified websocket connection.
- * @METHOD_PROTO: int write(struct ws_request *wr, unsigned int code, unsigned char *data, uint64_t len)
- * @METHOD_PARAM: wr the target websocket connection
- * @METHOD_PARAM: code the message code, can be one of: WS_OPCODE_CONTINUE, WS_OPCODE_TEXT, WS_OPCODE_BINARY, WS_OPCODE_CLOSE, WS_OPCODE_PING or WS_OPCODE_PONG.
- * @METHOD_PARAM: data the data to be send
- * @METHOD_PARAM: len the length of the data to be send
- * @METHOD_RETURN:  Upon successful completion it returns 0, on error returns -1.
- */
-int ws_write ( epdata_t *epd, unsigned int code, unsigned char *data, uint64_t len )
-{
-    return ws_send_data ( epd, 1, 0, 0, 0, code, len, data );
-}
-
 int websocket_be_read ( se_ptr_t *ptr )
 {
     epdata_t *epd = ptr->data;
@@ -257,8 +242,9 @@ int websocket_be_read ( se_ptr_t *ptr )
                 if ( lua_isfunction ( L, -1 ) ) {
                     lua_pushlstring ( L, epd->contents, payload_length );
                     lua_pushboolean ( L, frame_opcode == WS_OPCODE_BINARY );
+                    lua_pushboolean ( L, !! ( ( epd->headers[0] ) & ( 1 << ( 7 ) ) ) );
 
-                    if ( lua_pcall ( L, 2, 0, 0 ) ) {
+                    if ( lua_pcall ( L, 3, 0, 0 ) ) {
                         if ( lua_isstring ( L, -1 ) ) {
                             errorlog ( epd, lua_tostring ( L, -1 ) );
                             lua_pop ( L, 1 );

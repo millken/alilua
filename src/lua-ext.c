@@ -298,6 +298,9 @@ int lua_clear_header ( lua_State *L )
 
     epdata_t *epd = lua_touserdata ( L, 1 );
     epd->response_header_length = 0;
+    free ( epd->iov[0].iov_base );
+    epd->iov[0].iov_base = NULL;
+    epd->iov[0].iov_len = 0;
     return 0;
 }
 
@@ -334,7 +337,7 @@ int lua_die ( lua_State *L )
 
     epdata_t *epd = lua_touserdata ( L, 1 );
 
-    if ( epd->websocket ) {
+    if ( epd->websocket || epd->status == STEP_SEND ) {
         return 0;
     }
 
@@ -496,9 +499,22 @@ int lua_f_websocket_send ( lua_State *L )
     size_t len;
     const char *data = lua_tolstring ( L, 2, &len );
     epd->websocket->L = L;
-    int r = ws_send_data ( epd, 1, 0, 0, 0, (lua_isboolean ( L,
-                           3 ) && lua_toboolean ( L,
-                           3 )) ? WS_OPCODE_BINARY : WS_OPCODE_TEXT, len, data );
+
+    int r = 0;
+
+    if ( lua_isboolean ( L, 4 ) ) {
+        if ( lua_toboolean ( L, 4 ) == 0 ) {
+            r = ws_send_data ( epd,  0, 0, 0, 0, ( lua_isboolean ( L, 3 )
+                                                   && lua_toboolean ( L, 3 ) ) ? WS_OPCODE_BINARY : WS_OPCODE_TEXT, len, data );
+
+        } else {
+            r = ws_send_data ( epd,  1, 0, 0, 0, WS_OPCODE_CONTINUE, len, data );
+        }
+
+    } else {
+        r = ws_send_data ( epd,  1, 0, 0, 0, ( lua_isboolean ( L, 3 )
+                                               && lua_toboolean ( L, 3 ) ) ? WS_OPCODE_BINARY : WS_OPCODE_TEXT, len, data );
+    }
 
     if ( r == -1 ) {
         lua_pushnil ( L );

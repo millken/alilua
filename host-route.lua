@@ -15,8 +15,12 @@ function process(headers, _GET, _COOKIE, _POST)
 				break
 			end
 		end
-		dofile(router) die()
+		dofile(router)
+		die()
 	end)
 	
 	if e then print_error(__epd__, e) end
+	
+	r,e = wait(r)
+	if not r and e then print_error(__epd__, e) end
 end
