@@ -41,6 +41,7 @@ shm_t *_shm_serv_status;
 typedef struct {
     uint8_t masking_key_offset;
     uint8_t frame_mask;
+    uint8_t is_multi_frame;
     unsigned char frame_masking_key[4];
     int websocket_handles;
     void *ML;

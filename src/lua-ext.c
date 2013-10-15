@@ -459,6 +459,7 @@ int lua_f_upgrade_to_websocket ( lua_State *L )
     epd->websocket->ML = L;
     epd->websocket->L = NULL;
     epd->websocket->data = NULL;
+    epd->websocket->is_multi_frame = 0;
 
     epd->status = STEP_WAIT;
 
@@ -502,18 +503,25 @@ int lua_f_websocket_send ( lua_State *L )
 
     int r = 0;
 
-    if ( lua_isboolean ( L, 4 ) ) {
-        if ( lua_toboolean ( L, 4 ) == 0 ) {
-            r = ws_send_data ( epd,  0, 0, 0, 0, ( lua_isboolean ( L, 3 )
-                                                   && lua_toboolean ( L, 3 ) ) ? WS_OPCODE_BINARY : WS_OPCODE_TEXT, len, data );
-
-        } else {
-            r = ws_send_data ( epd,  1, 0, 0, 0, WS_OPCODE_CONTINUE, len, data );
-        }
+    if ( lua_gettop ( L ) < 3 && epd->websocket->is_multi_frame == 1 ) { // mid frames
+        r = ws_send_data ( epd,  0, 0, 0, 0, WS_OPCODE_CONTINUE, len, data );
 
     } else {
-        r = ws_send_data ( epd,  1, 0, 0, 0, ( lua_isboolean ( L, 3 )
-                                               && lua_toboolean ( L, 3 ) ) ? WS_OPCODE_BINARY : WS_OPCODE_TEXT, len, data );
+        if ( lua_isboolean ( L, 4 ) ) { // multi frames
+            if ( lua_toboolean ( L, 4 ) == 0 ) { // first frame
+                r = ws_send_data ( epd,  0, 0, 0, 0, ( lua_isboolean ( L, 3 )
+                                                       && lua_toboolean ( L, 3 ) ) ? WS_OPCODE_BINARY : WS_OPCODE_TEXT, len, data );
+                epd->websocket->is_multi_frame = 1;
+
+            } else { // last frame
+                r = ws_send_data ( epd,  1, 0, 0, 0, WS_OPCODE_CONTINUE, len, data );
+                epd->websocket->is_multi_frame = 0;
+            }
+
+        } else { // single frame
+            r = ws_send_data ( epd,  1, 0, 0, 0, ( lua_isboolean ( L, 3 )
+                                                   && lua_toboolean ( L, 3 ) ) ? WS_OPCODE_BINARY : WS_OPCODE_TEXT, len, data );
+        }
     }
 
     if ( r == -1 ) {
