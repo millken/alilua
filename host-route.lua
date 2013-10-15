@@ -21,6 +21,6 @@ function process(headers, _GET, _COOKIE, _POST)
 	
 	if e then print_error(__epd__, e) end
 	
-	r,e = wait(r)
+	r,e = wait(r) --important!
 	if not r and e then print_error(__epd__, e) end
 end
