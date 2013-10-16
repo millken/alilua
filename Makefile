@@ -11,7 +11,7 @@ DEBUG = -g -ggdb
 
 ifeq ($(LUAJIT),)
 ifeq ($(LUA),)
-LIBLUA = -llua -L/usr/lib -L/usr/local/lib
+LIBLUA = -llua -L/usr/lib
 else
 LIBLUA = -L$(LUA) -llua
 endif

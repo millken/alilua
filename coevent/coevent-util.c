@@ -31,7 +31,7 @@ static struct hostent *localhost_ent = NULL;
 int tcp_connect ( const char *host, int port, cosocket_t *cok, int loop_fd, int *ret )
 {
     int sockfd = -1;
-    bzero ( &cok->addr, sizeof ( struct sockaddr_in ) );
+    bzero ( ( void * ) &cok->addr, sizeof ( struct sockaddr_in ) );
 
     if ( port > 0 ) {
         cok->addr.sin_family = AF_INET;
@@ -79,7 +79,7 @@ int tcp_connect ( const char *host, int port, cosocket_t *cok, int loop_fd, int 
                     return -2;
                 }
 
-                cok->addr.sin_addr.s_addr = ( ( struct in_addr * ) phost->h_addr )->s_addr;
+                cok->addr.sin_addr.s_addr = ( ( struct in_addr * ) phost->h_addr_list[0] )->s_addr;
             }
         }
     }
@@ -141,7 +141,6 @@ int add_to_timeout_link ( cosocket_t *cok, int timeout )
     timeout_link_t  *_tl = NULL,
                      *_tll = NULL,
                       *_ntl = NULL;
-    int add = 0;
 
     if ( timeout < 10 ) {
         timeout = 1000;
@@ -162,14 +161,12 @@ int add_to_timeout_link ( cosocket_t *cok, int timeout )
         return 1;
 
     } else {
-        add = 1;
         _tl = timeout_links[p];
 
         while ( _tl ) {
             _tll = _tl; /// get last item
 
             if ( _tl->cok == cok ) {
-                add = 0;
                 break;
             }
 
@@ -315,4 +312,6 @@ int chk_do_timeout_link ( int loop_fd )
             _tl = _ttl;
         }
     }
+
+    return 0;
 }
