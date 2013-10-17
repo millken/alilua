@@ -1,0 +1,37 @@
+local class = require 'luafcgi/30log'
+local Request = class {}
+Request.__name = "Request"
+
+--[[
+各种服务器带的参数不一样，nginx就没有path_info
+]]--
+local function pathinfo(env)
+	if (env.PATH_INFO and #env.PATH_INFO > 0)then return env.PATH_INFO end
+	if (env.REQUEST_URI and #env.REQUEST_URI > 0) then
+	 local pos = string.find(env.REQUEST_URI, '?')
+	 if pos then 
+	 	return string.sub(env.REQUEST_URI, 1, pos)
+	 else
+	 	return env.REQUEST_URI
+	 end
+	end
+	return '/'
+end
+
+function Request:__init(env, con)
+        self.method  	     = env.REQUEST_METHOD
+        self.schema          = env.schema
+        self.host            = env.HTTP_HOST
+        self.hostname        = env.SERVER_NAME
+        self.uri             = env.REQUEST_URI or ''
+        self.path_info       = pathinfo(env)
+        self.filename        = env.request_filename
+        self.query_string    = env.QUERY_STRING or ''
+        self.is_ssl 	     = self.schema == "https"
+        self.user_agent      = env.HTTP_USER_AGENT
+        self.remote_addr     = env.REMOTE_ADDR
+        self.remote_port     = env.REMOTE_PORT
+
+end
+
+return Request
