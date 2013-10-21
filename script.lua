@@ -8,6 +8,7 @@ function main(__epd, headers, _GET, _COOKIE, _POST)
 	--app:set_route('GET', '/404', require('errorpage').code404)
 
 	app:get("/", function()
+	  response:addHeader("CUSTOM", "HEADER")
 	  return "Hello, World"-- .. config.db.host
 	end)
 

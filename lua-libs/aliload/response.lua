@@ -44,7 +44,7 @@ function Response:finish(epd, headers, get, cookie, post)
         self:addHeader('Content-Type', 'text/html; charset=utf-8')
     end
     for n, v in pairs(self.headers) do
-        --header(n, v)
+        header(epd, n .. ": " .. v)
     end
     self:clearHeader()
   if(_.isFunction(self.body)) then
