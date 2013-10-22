@@ -22,6 +22,7 @@ function Response:__init(args)
   self.status = status or 200
   self.body = body or " "
   self.headers = headers or {}
+  self.cookies = {}
 end
 
 function Response:update(args)
@@ -39,6 +40,28 @@ function Response:clearHeader()
   self.headers = {}
 end
 
+function Response:setCookie(name, value, expire, path, domain)
+	if not name then return false end
+	if not value then value = '' expire = time()-86400 end
+	local cookie = 'Set-Cookie: '..escape_uri(name)..'='..escape_uri(value)..';'
+	if expire then
+		cookie = cookie .. ' Expires='..date(expire):fmt('%a, %d %b %Y %T GMT')..';'
+	end
+	if path then
+		cookie = cookie .. ' Path='..path..';'
+	end
+	if domain then
+		cookie = cookie .. ' Domain='..domain..';'
+	end
+	if secure then
+		cookie = cookie .. ' Secure;'
+	end
+	if httponly then
+		cookie = cookie .. ' HttpOnly'
+	end
+	self.cookies[name] = cookie
+end
+
 function Response:finish(epd, headers, get, cookie, post)
     if not self.headers['Content-Type'] then
         self:addHeader('Content-Type', 'text/html; charset=utf-8')
@@ -47,6 +70,9 @@ function Response:finish(epd, headers, get, cookie, post)
         header(epd, n .. ": " .. v)
     end
     self:clearHeader()
+    for n, v in pairs(self.cookies) do
+    	header(epd, v)
+    end
   if(_.isFunction(self.body)) then
     for str in self.body do
       echo(epd, str)

@@ -46,23 +46,16 @@ function App:__init(epd, headers, get, cookie, post)
   self._cookie = cookie
   self._post = post
   self.routes={}
-  self._global = {}
+  self._GLOBALS = {}
   self.filters={['before']={},['after']={}}
   self.environment='development'
 end
-
-function App:delete(pattern, callback) self:set_route('DELETE', pattern, callback) end
-function App:get(pattern, callback)
-  self:set_route('GET', pattern, callback)
-  self:head(pattern, callback)
+function App:all(pattern, callback) 
+	self:set_route('GET', pattern, callback) 
+	self:set_route('POST', pattern, callback)
 end
-function App:head(pattern, callback) self:set_route('HEAD', pattern, callback) end
-function App:link(pattern, callback) self:set_route('LINK', pattern, callback) end
-function App:options(pattern, callback) self:set_route('OPTIONS', pattern, callback) end
-function App:patch(pattern, callback) self:set_route('PATCH', pattern, callback) end
+function App:get(pattern, callback)  self:set_route('GET', pattern, callback) end
 function App:post(pattern, callback) self:set_route('POST', pattern, callback) end
-function App:put(pattern, callback) self:set_route('PUT', pattern, callback) end
-function App:unlink(pattern, callback) self:set_route('UNLINK', pattern, callback) end
 
 local function compile(method, pattern, callback)
   return {
@@ -91,13 +84,13 @@ function App:process_route(route, block)
         params[key] = value
       end
     end)
-    local context = setmetatable({
+    local _GM = {
       self=self,
       request=self.request,
       response=self.response,
-      global = self.global,
       params=params
-    }, { __index = _G})
+    }
+    local context = setmetatable(_.extend(_GM, self._GLOBALS), { __index = _G})
     local callback = setfenv(route.callback, context)
     return catch(Pass, block, self, callback(unpack(matches)))
   end
@@ -144,7 +137,7 @@ function App:process_routes()
   local pass_block
   self:process_filters('before')
 
-  local routes = self.routes[self.request.method]
+  local routes = self.routes[self.request.method] or {}
   for index, route in ipairs(routes) do
     pass_block = catch(Pass, self.process_route, self, route, self.halt)
   end
