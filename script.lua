@@ -1,4 +1,6 @@
+package.path = './controller/?.lua;./controller/?/init.lua;./lib/?.lua;./lib/?/init.lua;./vendor/?.lua;./vendor/?/init.lua;' .. package.path
 local aliload = require('aliload')
+local table, _ = table, require("aliload/underscore")
 
 local cjson = require('cjson')
 md5 = function(s) return crypto.evp.digest('md5', s) end
@@ -24,9 +26,9 @@ function sprintf(s, ...) return (s:format(...)) end
 
 function main(__epd, headers, _GET, _COOKIE, _POST)
 	local app = aliload.app:new(__epd, headers, _GET, _COOKIE, _POST)
-	
-	--app:set_route('GET', '/test/memcache', require('test').memcache)	
-	app:set_route('GET', '/test', require('test').index)
+	local route = require('conf/route')
+	app:set_routes(route)
+	app:set_route('GET', '/test', require('index').index)
 	--app:set_route('GET', '/404', require('errorpage').code404)
 
 	app:all("/", function()

@@ -70,6 +70,12 @@ function App:set_route(method, pattern, callback)
   table.insert(self.routes[method], compile(method, pattern, callback))
 end
 
+function App:set_routes(routes)
+	_.each(routes, function(route)
+	 self:set_route(route[1], route[2], route[3])
+	end)
+end
+
 function App:process_route(route, block)
   local request = self.request
   local matches = { route.pattern:match(request.uri) }
