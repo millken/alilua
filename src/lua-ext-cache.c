@@ -65,7 +65,8 @@ int lua_f_cache_set ( lua_State *L )
         }
     }
 
-    lua_pushboolean ( L, yac_storage_update ( key, klen, value, vlen, 1, ttl, 0 ) );
+    lua_pushboolean ( L, yac_storage_update ( key, klen, value, vlen, 1, ttl, 0,
+                      time ( NULL ) ) );
 
     return 1;
 }
@@ -104,7 +105,8 @@ int lua_f_cache_get ( lua_State *L )
     char *value = NULL;
     int flag = 0;
 
-    if ( yac_storage_find ( key, klen, &value, &vlen, &flag, ( int * ) 0 ) ) {
+    if ( yac_storage_find ( key, klen, &value, &vlen, &flag, ( int * ) 0,
+                            time ( NULL ) ) ) {
         //if(value){
         int t = 1;
 
@@ -160,7 +162,7 @@ int lua_f_cache_del ( lua_State *L )
         key = md5chars;
     }
 
-    lua_pushboolean ( L, yac_storage_delete ( ( char * ) key, klen, 300 ) );
+    lua_pushboolean ( L, yac_storage_delete ( ( char * ) key, klen, 300 , time ( NULL ) ) );
 
     return 1;
 }

@@ -55,12 +55,12 @@ int network_send_header ( epdata_t *epd, const char *header )
 
     int len = strlen ( header );
 
-    if ( len < 1 || epd->response_header_length + len + 2 > 4096 ) {
+    if ( len < 1 || epd->response_header_length + len + 2 > EP_D_BUF_SIZE ) {
         return 0;
     }
 
     if ( epd->iov[0].iov_base == NULL ) {
-        epd->iov[0].iov_base = malloc ( 4096 );
+        epd->iov[0].iov_base = malloc ( EP_D_BUF_SIZE );
 
         if ( epd->iov[0].iov_base == NULL ) {
             return 0;
@@ -157,7 +157,9 @@ void free_epd ( epdata_t *epd )
     }
 
     if ( epd->headers ) {
-        free ( epd->headers );
+        if ( epd->headers != &epd->iov ) {
+            free ( epd->headers );
+        }
     }
 
     int i = 0;
@@ -177,7 +179,10 @@ void free_epd_request ( epdata_t *epd )  /// for keepalive
     }
 
     if ( epd->headers ) {
-        free ( epd->headers );
+        if ( epd->headers != &epd->iov ) {
+            free ( epd->headers );
+        }
+
         epd->headers = NULL;
     }
 
@@ -187,6 +192,8 @@ void free_epd_request ( epdata_t *epd )  /// for keepalive
         free ( epd->iov[i].iov_base );
         epd->iov[i].iov_base = NULL;
     }
+
+    epd->iov_buf_count = 0;
 
     epd->response_header_length = 0;
     epd->response_content_length = 0;
@@ -271,6 +278,8 @@ void network_end_process ( epdata_t *epd )
         epd->iov[i].iov_base = NULL;
         epd->iov[i].iov_len = 0;
     }
+
+    epd->iov_buf_count = 0;
 
     long ttime = longtime();
 
@@ -393,7 +402,7 @@ void network_be_end ( epdata_t *epd )  // for lua function die
         if ( len < 4086 && epd->response_sendfile_fd <= -1 && epd->iov[1].iov_base
              && epd->iov[1].iov_len > 0 ) {
             if ( epd->iov[0].iov_base == NULL ) {
-                epd->iov[0].iov_base = malloc ( 4096 );
+                epd->iov[0].iov_base = malloc ( EP_D_BUF_SIZE );
             }
 
             if ( epd->iov[0].iov_base == NULL ) {
@@ -476,32 +485,34 @@ static int network_be_read ( se_ptr_t *ptr )
     update_timeout ( epd->timeout_ptr, STEP_READ_TIMEOUT );
 
     if ( epd->headers == NULL ) {
-        epd->headers = malloc ( 4096 );
+        epd->headers = &epd->iov;
+        epd->buf_size = sizeof ( epd->iov );
 
-        if ( epd->headers == NULL ) {
-            epd->status = STEP_FINISH;
-            network_send_error ( epd, 503, "memory error!" );
-            close_client ( epd );
-            serv_status.reading_counts--;
-            return 0;
-        }
-
-        epd->buf_size = 4096;
-
-    } else if ( epd->data_len + 4096 > epd->buf_size ) {
-        char *_t = ( char * ) realloc ( epd->headers, epd->buf_size + 4096 );
-
-        if ( _t != NULL ) {
-            epd->headers = _t;
+    } else if ( epd->data_len == epd->buf_size ) {
+        if ( epd->headers == &epd->iov ) {
+            epd->headers = malloc ( 4096 * 2 );
+            memcpy ( epd->headers, &epd->iov, sizeof ( epd->iov ) );
+            epd->buf_size = 4096 * 2;
 
         } else {
-            network_send_error ( epd, 503, "memory error!" );
-            close_client ( epd );
-            serv_status.reading_counts--;
-            return 0;
-        }
+            char *_t = ( char * ) realloc ( epd->headers, epd->buf_size + 4096 );
 
-        epd->buf_size += 4096;
+            if ( _t != NULL ) {
+                epd->headers = _t;
+
+            } else {
+                epd->iov[0].iov_base = NULL;
+                epd->iov[0].iov_len = 0;
+                epd->iov[1].iov_base = NULL;
+                epd->iov[1].iov_len = 0;
+                network_send_error ( epd, 503, "memory error!" );
+                close_client ( epd );
+                serv_status.reading_counts--;
+                return 0;
+            }
+
+            epd->buf_size += 4096;
+        }
     }
 
     while ( ( n = recv ( epd->fd, epd->headers + epd->data_len,
@@ -513,20 +524,30 @@ static int network_be_read ( se_ptr_t *ptr )
         }
 
         if ( epd->data_len + n >= epd->buf_size ) {
-            char *_t = ( char * ) realloc ( epd->headers, epd->buf_size + 4096 );
-
-            if ( _t != NULL ) {
-                epd->headers = _t;
+            if ( epd->headers == &epd->iov ) {
+                epd->headers = malloc ( 4096 * 2 );
+                memcpy ( epd->headers, &epd->iov, sizeof ( epd->iov ) );
+                epd->buf_size = 4096 * 2;
 
             } else {
-                network_send_error ( epd, 503, "buf error!" );
-                close_client ( epd );
-                epd = NULL;
-                serv_status.reading_counts--;
-                break;
-            }
+                char *_t = ( char * ) realloc ( epd->headers, epd->buf_size + 4096 );
 
-            epd->buf_size += 4096;
+                if ( _t != NULL ) {
+                    epd->headers = _t;
+
+                } else {
+                    epd->iov[0].iov_base = NULL;
+                    epd->iov[0].iov_len = 0;
+                    epd->iov[1].iov_base = NULL;
+                    epd->iov[1].iov_len = 0;
+                    network_send_error ( epd, 503, "memory error!" );
+                    close_client ( epd );
+                    serv_status.reading_counts--;
+                    return 0;
+                }
+
+                epd->buf_size += 4096;
+            }
         }
 
         if ( epd->status != STEP_READ ) {
@@ -604,7 +625,10 @@ static int network_be_read ( se_ptr_t *ptr )
             if ( epd->_header_length > 0
                  && epd->_header_length < epd->data_len
                  && epd->content_length < 1 ) {
-
+                epd->iov[0].iov_base = NULL;
+                epd->iov[0].iov_len = 0;
+                epd->iov[1].iov_base = NULL;
+                epd->iov[1].iov_len = 0;
                 network_send_error ( epd, 411, "" );
                 close_client ( epd );
                 epd = NULL;
@@ -647,11 +671,6 @@ static int network_be_read ( se_ptr_t *ptr )
 
             epd->response_sendfile_fd = -1;
 
-            epd->iov[0].iov_base = NULL;
-            epd->iov[0].iov_len = 0;
-            epd->iov[1].iov_base = NULL;
-            epd->iov[1].iov_len = 0;
-
             /// output server status !!!!!!!!!!
             {
                 int i, len;
@@ -679,6 +698,12 @@ static int network_be_read ( se_ptr_t *ptr )
 
                 if ( i > 11 && strncmp ( "/serv-status", uri, i ) == 0 ) {
                     epd->process_timeout = 0;
+
+                    epd->iov[0].iov_base = NULL;
+                    epd->iov[0].iov_len = 0;
+                    epd->iov[1].iov_base = NULL;
+                    epd->iov[1].iov_len = 0;
+
                     network_send_status ( epd );
                     serv_status.reading_counts--;
                     break;

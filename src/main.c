@@ -6,6 +6,13 @@ static char LOG_BUF[40960];
 FILE *ERR_FD = NULL;
 static char ERR_BUF[4096];
 
+/// yac config
+#ifdef linux
+int YAC_CACHE_SIZE = ( 1024 * 1024 * 32 );
+#else /// for mac os
+int YAC_CACHE_SIZE = ( 1024 * 1024 * 2 );
+#endif
+
 static lua_State *_L;
 static int process_count = 2;
 static char tbuf_4096[4096];
@@ -20,7 +27,13 @@ static void *process_checker()
             safeProcess();
         }
 
-        sleep ( 1 );
+        struct timespec timeout;
+
+        timeout.tv_sec = 1;
+
+        timeout.tv_nsec = 0;
+
+        while ( nanosleep ( &timeout, &timeout ) && errno == EINTR );
     }
 }
 
@@ -82,7 +95,14 @@ static void master_main()
             exit ( 0 );
         }
 
-        sleep ( 1 );
+        struct timespec timeout;
+
+        timeout.tv_sec = 1;
+
+        timeout.tv_nsec = 0;
+
+        while ( nanosleep ( &timeout, &timeout ) && errno == EINTR );
+
         i++;
     }
 }
@@ -171,7 +191,7 @@ int worker_process ( epdata_t *epd, int thread_at )
                     *t3 = *t3 >= 'A' && *t3 <= 'Z' ? *t3 | 0x60 : *t3;
                 }
 
-                t3 = strtok_r ( t1, ":", &t1 );
+                t3 = t2 + strlen ( t2 ) + 1; //strtok_r ( t1, ":", &t1 )
 
                 if ( t3 ) {
                     int len = strlen ( t3 );
@@ -397,13 +417,20 @@ int worker_process ( epdata_t *epd, int thread_at )
 
                 p1 = p2 + 2;
             } while ( p2 );
-
-            free ( epd->headers );
-            epd->headers = NULL;
-            epd->header_len = 0;
-            epd->contents = NULL;
-            epd->content_length = 0;
         }
+
+        if ( epd->headers != &epd->iov ) {
+            free ( epd->headers );
+        }
+
+        epd->headers = NULL;
+        epd->header_len = 0;
+        epd->contents = NULL;
+        epd->content_length = 0;
+        epd->iov[0].iov_base = NULL;
+        epd->iov[0].iov_len = 0;
+        epd->iov[1].iov_base = NULL;
+        epd->iov[1].iov_len = 0;
 
         if ( lua_pcall ( L, 5, 0, 0 ) ) {
             if ( lua_isstring ( L, -1 ) ) {
@@ -447,8 +474,19 @@ int main ( int argc, char *argv[] )
     char *cwd = initProcTitle ( argc, argv );
 
     char *msg = NULL;
+    
+    if ( getarg ( "cache-size" ) ) {
+        msg = getarg ( "cache-size" );
+        YAC_CACHE_SIZE = atoi ( msg );
+        if(msg[strlen(msg)-1] == 'm')YAC_CACHE_SIZE = YAC_CACHE_SIZE*1024*1024;
+        else if(msg[strlen(msg)-1] == 'k')YAC_CACHE_SIZE = YAC_CACHE_SIZE*1024;
 
-    if ( !yac_storage_startup ( YAC_KEY_DATA_SIZE, YAC_VALUE_DATA_SIZE, &msg ) ) {
+    }
+    if ( YAC_CACHE_SIZE < 1024*1024*2 ) {
+        YAC_CACHE_SIZE = 1024*1024*2;
+    }
+
+    if ( !yac_storage_startup ( YAC_CACHE_SIZE/16, YAC_CACHE_SIZE-(YAC_CACHE_SIZE/16), &msg ) ) {
         printf ( "Shared memory allocator startup failed at '%s': %s", msg,
                  strerror ( errno ) );
         exit ( 1 );
@@ -510,6 +548,7 @@ int main ( int argc, char *argv[] )
                  "  --errorlog=file-path error log\n"
                  "  --host-route         Special route file path\n"
                  "  --code-cache-ttl     number of code cache time(sec)\n"
+                 "  --cache-size         size of YAC shared memory cache (1m or 4096000k)\n"
                  "  \n"
                  "\n",
                  version

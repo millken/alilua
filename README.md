@@ -63,6 +63,7 @@ CommandLine Options
 	--log=file path      access log
 	--host-route         Special route file path
 	--code-cache-ttl     number of code cache time(sec) default 60 sec
+	--cache-size         size of YAC shared memory cache (1m or 4096000k)
 
 Config
 ======

@@ -272,53 +272,60 @@ static inline unsigned int crc32(char *buf, unsigned int size) {
 /* }}} */
 
 static inline unsigned int yac_crc32(char *data, unsigned int size) /* {{{ */ {
-	char crc_contents[128];
-	if (size < sizeof(crc_contents)) {
+	if (size < YAC_FULL_CRC_THRESHOLD) {
 		return crc32(data, size);
 	} else {
-		int i, j, step = size / sizeof(crc_contents);
+		int i = 0;
+		char crc_contents[YAC_FULL_CRC_THRESHOLD];
+		int head = YAC_FULL_CRC_THRESHOLD >> 2;
+		int tail = YAC_FULL_CRC_THRESHOLD >> 4;
+		int body = YAC_FULL_CRC_THRESHOLD - head - tail;
+		char *p = data + head;
+		char *q = crc_contents + head;
+		int step = (size - tail - head) / body;
 
-		for (i = 0, j = 0; i < sizeof(crc_contents); i++, j+= step) {
-			crc_contents[i] = data[j];
+		memcpy(crc_contents, data, head);
+		for (; i < body; i++, q++, p+= step) {
+			*q = *p;
 		}
+		memcpy(q, p, tail);
 
-		return crc32(crc_contents, sizeof(crc_contents));
+		return crc32(crc_contents, YAC_FULL_CRC_THRESHOLD);
 	}
 }
 /* }}} */
 
-int yac_storage_find(char *key, unsigned int len, char **data, unsigned int *size, unsigned int *flag, int *cas) /* {{{ */ {
+int yac_storage_find(char *key, unsigned int len, char **data, unsigned int *size, unsigned int *flag, int *cas, unsigned long tv) /* {{{ */ {
 	ulong h, hash, seed;
 	yac_kv_key k, *p;
 	yac_kv_val v;
-	time_t tv;
 
 	hash = h = yac_inline_hash_func1(key, len);
 	p = &(YAC_SG(slots)[h & YAC_SG(slots_mask)]);
 	k = *p;
 	if (k.val) {
+		char *s;
 		uint i;
 		if (k.h == hash && YAC_KEY_KLEN(k) == len) {
 			v = *(k.val);
 			if (!memcmp(k.key, key, len)) {
-				char *s;
+				s = USER_ALLOC(YAC_KEY_VLEN(k) + 1);
+				memcpy(s, (char *)k.val->data, YAC_KEY_VLEN(k));
 do_verify:
-				if (k.ttl == 1 || k.len != v.len) {
+				if (k.len != v.len) {
+					USER_FREE(s);
 					++YAC_SG(miss);
 					return 0;
 				}
 
-				tv = time(NULL);
 				if (k.ttl) {
 					if (k.ttl <= tv) {
-						p->ttl = 1;
 						++YAC_SG(miss);
+						USER_FREE(s);
 						return 0;
 					}
 				}
 
-				s = USER_ALLOC(YAC_KEY_VLEN(k) + 1);
-				memcpy(s, (char *)k.val->data, YAC_KEY_VLEN(k));
 				if (k.crc != yac_crc32(s, YAC_KEY_VLEN(k))) {
 					USER_FREE(s);
 					++YAC_SG(miss);
@@ -342,6 +349,8 @@ do_verify:
 				v = *(p->val);
 				if (!memcmp(p->key, key, len)) {
 					k = *p;
+					s = USER_ALLOC(YAC_KEY_VLEN(k) + 1);
+					memcpy(s, (char *)k.val->data, YAC_KEY_VLEN(k));
 					goto do_verify;
 				}
 			}
@@ -354,7 +363,7 @@ do_verify:
 }
 /* }}} */
 
-void yac_storage_delete(char *key, unsigned int len, int ttl) /* {{{ */ {
+void yac_storage_delete(char *key, unsigned int len, int ttl, unsigned long tv) /* {{{ */ {
 	ulong hash, h, seed;
 	yac_kv_key k, *p;
 
@@ -368,8 +377,7 @@ void yac_storage_delete(char *key, unsigned int len, int ttl) /* {{{ */ {
 				if (ttl == 0) {
 					p->ttl = 1;
 				} else {
-					time_t tv = time(NULL);
-					p->ttl = tv + ttl;
+					p->ttl = ttl + tv;
 				}
 				return;
 			}
@@ -391,26 +399,28 @@ void yac_storage_delete(char *key, unsigned int len, int ttl) /* {{{ */ {
 }
 /* }}} */
 
-int yac_storage_update(char *key, unsigned int len, char *data, unsigned int size, unsigned int flag, int ttl, int add) /* {{{ */ {
+int yac_storage_update(char *key, unsigned int len, char *data, unsigned int size, unsigned int flag, int ttl, int add, unsigned long tv) /* {{{ */ {
 	ulong hash, h;
-	int idx = 0;
+	int idx = 0, is_valid;
 	yac_kv_key *p, k, *paths[4];
 	yac_kv_val *val, *s;
 	unsigned long real_size;
-	time_t tv;
 
 	hash = h = yac_inline_hash_func1(key, len);
 	paths[idx++] = p = &(YAC_SG(slots)[h & YAC_SG(slots_mask)]);
 	k = *p;
 	if (k.val) {
+		/* Found the exact match */
 		if (k.h == hash && YAC_KEY_KLEN(k) == len && !memcmp((char *)k.key, key, len)) {
 do_update:
-			tv = time(NULL);
-			if (add && (!k.ttl || (k.ttl != 1 && k.ttl > tv))
-				&& k.crc == yac_crc32(k.val->data, YAC_KEY_VLEN(k))) {
+			is_valid = 0;
+			if (k.crc == yac_crc32(k.val->data, YAC_KEY_VLEN(k))) {
+				is_valid = 1;
+			}
+			if (add && (!k.ttl || k.ttl > tv) && is_valid) {
 				return 0;
 			}
-			if (k.size >= size) {
+			if (k.size >= size && is_valid) {
 				s = USER_ALLOC(sizeof(yac_kv_val) + size - 1);
 				memcpy(s->data, data, size);
 				if (ttl) {
@@ -474,27 +484,25 @@ do_update:
 				if (k.val == NULL) {
 					goto do_add;
 				} else if (k.h == hash && YAC_KEY_KLEN(k) == len && !memcmp((char *)k.key, key, len)) {
+					/* Found the exact match */
 					goto do_update;
 				}
 			}
 			
 			--idx;
 			max_atime = paths[idx]->val->atime;
-			p = paths[idx];
-			if (p->ttl != 1) {
-				for (i = 0; i < idx; i++) {
-					if (paths[i]->ttl == 1 || paths[i]->len != paths[i]->val->len) {
-						p = paths[i];
-						goto do_add;
-					} else if (paths[i]->val->atime < max_atime) {
-						max_atime = paths[i]->val->atime;
-						p = paths[i];
-					}
+			for (i = 0; i < idx; i++) {
+				if ((paths[i]->ttl && paths[i]->ttl <= tv) || paths[i]->len != paths[i]->val->len) {
+					p = paths[i];
+					goto do_add;
+				} else if (paths[i]->val->atime < max_atime) {
+					max_atime = paths[i]->val->atime;
+					p = paths[i];
 				}
 			}
+			++YAC_SG(kicks);
 			k = *p;
 			k.h = hash;
-			++YAC_SG(kicks);
 
 			goto do_update;
 		}
@@ -505,7 +513,6 @@ do_add:
 			++YAC_SG(fails);
 			return 0;
 		}
-		tv = time(NULL);
 		s = USER_ALLOC(sizeof(yac_kv_val) + size - 1);
 		memcpy(s->data, data, size);
 		s->atime = tv;
@@ -567,6 +574,46 @@ yac_storage_info * yac_storage_get_info(void) /* {{{ */ {
 
 void yac_storage_free_info(yac_storage_info *info) /* {{{ */ {
 	USER_FREE(info);
+}
+/* }}} */
+
+yac_item_list * yac_storage_dump(unsigned int limit) /* {{{ */ {
+	yac_kv_key k;
+	yac_item_list *item, *list = NULL;
+
+	if (YAC_SG(slots_num)) {
+		unsigned int i = 0, n = 0;
+		for (; i<YAC_SG(slots_size) && n < YAC_SG(slots_num) && n < limit; i++) {
+			k = YAC_SG(slots)[i];
+			if (k.val) {
+				item = USER_ALLOC(sizeof(yac_item_list));
+				item->index = i;
+				item->h = k.h;
+				item->crc = k.crc;
+				item->ttl = k.ttl;
+				item->k_len = YAC_KEY_KLEN(k);
+				item->v_len = YAC_KEY_VLEN(k);
+				item->flag = k.flag;
+				item->size = k.size;
+				memcpy(item->key, k.key, YAC_STORAGE_MAX_KEY_LEN);
+				item->next = list;
+				list = item;
+				++n;
+			}
+		}
+	}
+
+	return list;
+}
+/* }}} */
+
+void yac_storage_free_list(yac_item_list *list) /* {{{ */ {
+	yac_item_list *l;
+	while (list) {
+		l = list;
+		list = list->next;
+		USER_FREE(l);
+	}
 }
 /* }}} */
 
