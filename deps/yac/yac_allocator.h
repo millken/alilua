@@ -27,7 +27,7 @@
 #ifdef linux
 #define YAC_SMM_MAIN_SEG_SIZE       (4*1024*1024)
 #define YAC_SMM_SEGMENT_MAX_SIZE    (32*1024*1024)
-#define YAC_SMM_SEGMENT_MIN_SIZE    (4*1024*1024)
+#define YAC_SMM_SEGMENT_MIN_SIZE    (1*1024*1024)
 #else
 #define YAC_SMM_MAIN_SEG_SIZE       (1*1024*1024)
 #define YAC_SMM_SEGMENT_MAX_SIZE    (1*1024*1024)
@@ -41,6 +41,11 @@
 #define USE_SHM      1
 //#define USE_MMAP      1
 
+#define ALLOC_FAILURE           0
+#define ALLOC_SUCCESS           1
+#define FAILED_REATTACHED       2
+#define SUCCESSFULLY_REATTACHED 4
+#define ALLOC_FAIL_MAPPING      8
 
 typedef int (*create_segments_t)(unsigned long k_size, unsigned long v_size, yac_shared_segment **shared_segments, int *shared_segment_count, char **error_in);
 typedef int (*detach_segment_t)(yac_shared_segment *shared_segment);
@@ -78,6 +83,10 @@ extern yac_shared_memory_handlers yac_alloc_mmap_handlers;
 extern yac_shared_memory_handlers yac_alloc_shm_handlers;
 #define yac_shared_memory_handler yac_alloc_shm_handlers
 #define YAC_SHARED_MEMORY_HANDLER_NAME "shm"
+#elif defined(USE_FILE_MAPPING)
+extern yac_shared_memory_handlers yac_alloc_create_file_handlers;
+#define yac_shared_memory_handler yac_alloc_create_file_handlers
+#define YAC_SHARED_MEMORY_HANDLER_NAME "file_mapping"
 #endif
 
 #endif /* YAC_ALLOCATOR_H */
