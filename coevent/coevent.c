@@ -958,6 +958,15 @@ int lua_co_setkeepalive ( lua_State *L )
         cok->pool_key = fnv1a_32 ( key, len );
     }
 
+    _lua_co_close ( L, cok );
+
+    if ( cok->ssl ) {
+        SSL_CTX_free ( cok->ctx );
+        cok->ctx = NULL;
+        SSL_free ( cok->ssl );
+        cok->ssl = NULL;
+    }
+
     lua_pushboolean ( L, 1 );
     return 1;
 }
