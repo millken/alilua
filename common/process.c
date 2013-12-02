@@ -184,6 +184,9 @@ void daemonize()
     signal ( SIGTTIN, SIG_IGN );
     signal ( SIGHUP, signal_handler );
     signal ( SIGTERM, signal_handler );
+    signal ( SIGXCPU, SIG_IGN );
+    signal ( SIGXFSZ, SIG_IGN );
+    signal ( SIGPIPE, SIG_IGN );
 }
 
 void attach_on_exit ( void *fun )
@@ -203,6 +206,7 @@ void attach_on_exit ( void *fun )
     sigaction ( SIGTRAP, &myAction, NULL );
     sigaction ( SIGXCPU, &myAction, NULL );
     sigaction ( SIGXFSZ, &myAction, NULL );
+    sigaction ( SIGPIPE, &myAction, NULL );
 
     sigaction ( SIGINT, &myAction, NULL ); /// CTRL+C
 }
